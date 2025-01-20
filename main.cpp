@@ -87,65 +87,62 @@ private:
         qDebug() << "Y:" << ecef.y;
         qDebug() << "Z:" << ecef.z;
 
-        // WGS84 ellipsoid parameters
-        const double a = 6378.137; // semi-major axis (km)
-        const double f = 1.0/298.257223563; // flattening
-        const double b = a * (1.0 - f); // semi-minor axis (km)
-        const double e = sqrt(1.0 - (b*b)/(a*a)); // eccentricity
+        const double a = 6378.137; // WGS84 Earth radius in kilometers
+        const double f = 1.0 / 298.257223563; // WGS84 flattening
+        const double b = a * (1.0 - f); // semi-minor axis
+        const double e2 = 2*f - f*f; // square of eccentricity
 
         qDebug() << "\n--- WGS84 Parameters ---";
-        qDebug() << "Semi-major axis (km):" << a;
+        qDebug() << "Earth radius (km):" << a;
         qDebug() << "Flattening:" << f;
-        qDebug() << "Semi-minor axis (km):" << b;
-        qDebug() << "Eccentricity:" << e;
+        qDebug() << "Square of eccentricity:" << e2;
 
-        // Calculate intermediate values
-        const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
-        const double theta = atan2(a*ecef.z, b*p);
-
-        qDebug() << "\n--- Intermediate Values ---";
-        qDebug() << "p (distance from Z axis) (km):" << p;
-        qDebug() << "theta (parametric latitude) (rad):" << theta;
-
-        // Calculate longitude
+        // Calculate longitude first (easier)
         const double longitude = atan2(ecef.y, ecef.x);
 
-        // Calculate latitude using improved algorithm
-        const double latitude = atan2(
-            ecef.z + (e*e*(a/b))*a*pow(sin(theta), 3),
-            p - (e*e)*a*pow(cos(theta), 3)
-            );
+        // Calculate distance from Z axis
+        const double p = sqrt(ecef.x * ecef.x + ecef.y * ecef.y);
 
-        // Calculate altitude
-        const double N = a / sqrt(1.0 - e*e*sin(latitude)*sin(latitude));
-        const double altitude = p/cos(latitude) - N;
+        qDebug() << "\n--- Intermediate Values ---";
+        qDebug() << "Distance from Z axis (km):" << p;
 
-        qDebug() << "\n--- Final Geographic Coordinates ---";
-        qDebug() << "Latitude (rad):" << latitude;
-        qDebug() << "Longitude (rad):" << longitude;
-        qDebug() << "Altitude (km):" << altitude;
+        // Calculate latitude iteratively
+        double latitude = atan2(ecef.z, p * (1.0 - e2));
+        double prevLat;
+        int iterations = 0;
 
-        // Convert to degrees
+        do {
+            prevLat = latitude;
+            const double sinLat = sin(latitude);
+            const double N = a / sqrt(1.0 - e2 * sinLat * sinLat);
+            latitude = atan2(ecef.z + e2 * N * sinLat, p);
+            iterations++;
+
+            qDebug() << "Iteration" << iterations << "latitude (rad):" << latitude;
+        } while (fabs(latitude - prevLat) > 1e-10 && iterations < 10);
+
+        // Calculate height above ellipsoid
+        const double sinLat = sin(latitude);
+        const double N = a / sqrt(1.0 - e2 * sinLat * sinLat);
+        const double altitude = p / cos(latitude) - N;
+
         GeographicCoords geo;
         geo.latitude = latitude * 180.0 / M_PI;
         geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
 
-        qDebug() << "\n--- Final Coordinates (Degrees) ---";
+        qDebug() << "\n--- Final Coordinates ---";
         qDebug() << "Latitude (deg):" << geo.latitude;
         qDebug() << "Longitude (deg):" << geo.longitude;
         qDebug() << "Altitude (km):" << geo.altitude;
 
-        // Validation checks
+        // Validation
         qDebug() << "\n--- Validation ---";
+        qDebug() << "Original radius vector (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
+        qDebug() << "Computed ground distance (km):" << p;
+        qDebug() << "Iterations required:" << iterations;
         qDebug() << "Latitude in range [-90,90]:" << (geo.latitude >= -90 && geo.latitude <= 90);
         qDebug() << "Longitude in range [-180,180]:" << (geo.longitude >= -180 && geo.longitude <= 180);
-        qDebug() << "Reasonable altitude (100-2000 km):" << (geo.altitude >= 100 && geo.altitude <= 2000);
-
-        // Calculate ground track speed
-        double r = sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
-        qDebug() << "Orbital radius (km):" << r;
-        qDebug() << "Height above Earth's surface (km):" << (r - a);
 
         qDebug() << "=== End Geographic Coordinates Calculation ===\n";
 
@@ -227,8 +224,8 @@ void debugPrintTLE(const TLE& tle) {
     qDebug() << "jo (rad/min):" << tle.jo;
 
     qDebug() << "\n--- Original TLE Lines ---";
-    qDebug() << "Line 1:" << "1 57890U 23145E   25020.52408874  .00019534  00000-0  81581-3 0  9999";
-    qDebug() << "Line 2:" << "2 57890  34.9931 184.3980 0003522 251.7861 108.2470 15.22764851 74908";
+    qDebug() << "Line 1:" << "1 57890U 23145E   25020.58965078  .00018142  00000-0  75795-3 0  9993";
+    qDebug() << "Line 2:" << "2 57890  34.9931 183.9858 0003532 252.3040 107.7289 15.22765489 74915";
 
     qDebug() << "=== End TLE Values ===\n";
 }
@@ -237,8 +234,8 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
     // Пример TLE данных (МКС)
-    QString line1 = "1 57890U 23145E   25020.52408874  .00019534  00000-0  81581-3 0  9999";
-    QString line2 = "2 57890  34.9931 184.3980 0003522 251.7861 108.2470 15.22764851 74908";
+    QString line1 = "1 57890U 23145E   25020.58965078  .00018142  00000-0  75795-3 0  9993";
+    QString line2 = "2 57890  34.9931 183.9858 0003532 252.3040 107.7289 15.22765489 74915";
 
     auto tle_opt = TLEParser::parseFromTxt(line1, line2);
     if (!tle_opt) {
