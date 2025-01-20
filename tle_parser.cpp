@@ -113,7 +113,6 @@ double TLEParser::parseDecimal(const QString& str) {
     double value = trimmed.toDouble(&ok);
 
     if (!ok) {
-        qDebug() << "Warning: Failed to parse decimal from:" << str;
         return 0.0;
     }
 

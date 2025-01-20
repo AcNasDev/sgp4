@@ -1,6 +1,5 @@
 // sgp4.cpp
 #include "sgp4.h"
-#include <QDebug>
 
 SGP4::SGP4(const TLE& tle) : tle_(tle) {
     initializeParameters();
@@ -57,9 +56,6 @@ void SGP4::calculateConstants() {
 }
 
 OrbitalState SGP4::getPosition(const QDateTime& time) const {
-    qDebug() << "\n=== SGP4 Position Calculation Debug ===";
-    qDebug() << "Input UTC time:" << time.toString("yyyy-MM-dd HH:mm:ss");
-
     // Расчет времени с эпохи
     int year = tle_.epochYear;
     if (year < 57) {
@@ -72,18 +68,10 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     epoch = epoch.addSecs(static_cast<qint64>((tle_.epochDay - 1.0) * 86400.0));
     double tsince = epoch.secsTo(time) / 60.0;  // время в минутах
 
-    qDebug() << "Epoch time:" << epoch.toString("yyyy-MM-dd HH:mm:ss");
-    qDebug() << "Time since epoch (minutes):" << tsince;
-
     // Вычисление средней аномалии, аргумента перигея и прямого восхождения
     double xmo = fmod(tle_.meanAnomaly * M_PI / 180.0 + xmdot_ * tsince, 2.0 * M_PI);
     double omegao = tle_.argumentPerigee * M_PI / 180.0 + omgdot_ * tsince;
     double xno = tle_.rightAscension * M_PI / 180.0 + xnodot_ * tsince;
-
-    qDebug() << "\n--- Orbital Elements at Time t ---";
-    qDebug() << "Mean Anomaly (rad):" << xmo;
-    qDebug() << "Argument of Perigee (rad):" << omegao;
-    qDebug() << "Right Ascension (rad):" << xno;
 
     // Улучшенное решение уравнения Кеплера
     double e = tle_.eccentricity;
@@ -93,7 +81,6 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     const int maxIter = 30;
     const double tolerance = 1e-12;
 
-    qDebug() << "\n--- Kepler's Equation Solution ---";
     do {
         double E_old = E;
         double sinE = sin(E);
@@ -107,7 +94,6 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
         E = E_old - delta;
 
         iter++;
-        qDebug() << "Iteration" << iter << "- E:" << E << "Delta:" << fabs(delta);
     } while (fabs(delta) > tolerance && iter < maxIter);
 
     // Вычисление истинной аномалии
@@ -120,11 +106,6 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     // Вычисление позиции в орбитальной плоскости
     double r = tle_.a * XKMPER * (1.0 - e * cosE);  // радиус в км
     double u = omegao + nu;  // аргумент широты
-
-    qDebug() << "\n--- Position Calculation ---";
-    qDebug() << "True Anomaly (rad):" << nu;
-    qDebug() << "Radius vector (km):" << r;
-    qDebug() << "Argument of latitude (rad):" << u;
 
     // Тригонометрические функции для преобразования координат
     double sin_u = sin(u);
@@ -177,10 +158,6 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     PolarMotion pm = {0.1, 0.2};  // Примерные значения, нужно получать актуальные
     pos_ecef = applyPolarMotion(pos_ecef, pm);
 
-    qDebug() << "\n--- Final Position and Velocity ---";
-    qDebug() << "ECEF Position (km):" << pos_ecef.x << pos_ecef.y << pos_ecef.z;
-    qDebug() << "ECEF Velocity (km/s):" << vel_ecef.x << vel_ecef.y << vel_ecef.z;
-
     return OrbitalState{pos_ecef, vel_ecef};
 }
 
@@ -218,14 +195,6 @@ double SGP4::calculateGMST(const QDateTime& time) const {
     // Нормализуем в диапазон [0, 360]
     gmst = fmod(gmst, 360.0);
     if (gmst < 0) gmst += 360.0;
-
-    qDebug() << "\n=== GMST Calculation Debug ===";
-    qDebug() << "UTC time:" << time.toString("yyyy-MM-dd HH:mm:ss");
-    qDebug() << "Julian centuries T:" << T;
-    qDebug() << "Base GMST (degrees):" << gmst - zeta - z - dpsi * cos(eps * M_PI/180.0);
-    qDebug() << "Precession (degrees):" << zeta + z;
-    qDebug() << "Nutation (arcsec):" << dpsi;
-    qDebug() << "Final GMST (degrees):" << gmst;
 
     return gmst * M_PI / 180.0;  // возвращаем в радианах
 }

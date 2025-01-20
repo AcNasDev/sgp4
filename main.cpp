@@ -81,29 +81,13 @@ private:
     };
 
     GeographicCoords ecefToGeographic(const Vector3& ecef) {
-        qDebug() << "\n=== Geographic Coordinates Calculation Debug ===";
-        qDebug() << "Input ECEF coordinates (km):";
-        qDebug() << "X:" << ecef.x;
-        qDebug() << "Y:" << ecef.y;
-        qDebug() << "Z:" << ecef.z;
-
         const double a = 6378.137; // WGS84 semi-major axis (km)
         const double f = 1.0/298.257223563; // WGS84 flattening
         const double b = a * (1.0 - f); // semi-minor axis
         const double e2 = f * (2.0 - f); // square of first eccentricity
 
-        qDebug() << "\n--- WGS84 Parameters ---";
-        qDebug() << "Semi-major axis (km):" << a;
-        qDebug() << "Flattening:" << f;
-        qDebug() << "Semi-minor axis (km):" << b;
-        qDebug() << "Square of eccentricity:" << e2;
-
         const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
         const double theta = atan2(ecef.z*a, p*b);
-
-        qDebug() << "\n--- Intermediate Values ---";
-        qDebug() << "Distance from Z axis (km):" << p;
-        qDebug() << "Parametric latitude (rad):" << theta;
 
         const double sin_theta = sin(theta);
         const double cos_theta = cos(theta);
@@ -122,24 +106,6 @@ private:
         geo.latitude = latitude * 180.0 / M_PI;
         geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
-
-        qDebug() << "\n--- Final Geographic Coordinates ---";
-        qDebug() << "Latitude (rad):" << latitude;
-        qDebug() << "Longitude (rad):" << longitude;
-        qDebug() << "Altitude (km):" << altitude;
-
-        qDebug() << "\n--- Final Coordinates (Degrees) ---";
-        qDebug() << "Latitude (deg):" << geo.latitude;
-        qDebug() << "Longitude (deg):" << geo.longitude;
-        qDebug() << "Altitude (km):" << geo.altitude;
-
-        qDebug() << "\n--- Validation ---";
-        qDebug() << "Latitude in range [-90,90]:" << (geo.latitude >= -90 && geo.latitude <= 90);
-        qDebug() << "Longitude in range [-180,180]:" << (geo.longitude >= -180 && geo.longitude <= 180);
-        qDebug() << "Reasonable altitude (100-2000 km):" << (geo.altitude >= 100 && geo.altitude <= 2000);
-        qDebug() << "Orbital radius (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
-        qDebug() << "Height above Earth's surface (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z) - a;
-        qDebug() << "=== End Geographic Coordinates Calculation ===\n";
 
         return geo;
     }
@@ -187,44 +153,6 @@ private:
     QLabel* velocityLabel_;
 };
 
-void debugPrintTLE(const TLE& tle) {
-    qDebug() << "\n=== TLE Values After Parsing ===";
-
-    qDebug() << "\n--- First Line Values ---";
-    qDebug() << "Satellite Number:" << tle.satelliteNumber;
-    qDebug() << "Classification:" << tle.classification;
-    qDebug() << "International Designator:" << QString::fromStdString(tle.internationalDesignator);
-    qDebug() << "Epoch Year:" << tle.epochYear;
-    qDebug() << "Epoch Day:" << tle.epochDay;
-    qDebug() << "First Derivative Mean Motion:" << tle.firstDerivativeMeanMotion;
-    qDebug() << "Second Derivative Mean Motion:" << tle.secondDerivativeMeanMotion;
-    qDebug() << "B* drag term:" << tle.bstar;
-    qDebug() << "Ephemeris Type:" << tle.ephemerisType;
-    qDebug() << "Element Number:" << tle.elementNumber;
-
-    qDebug() << "\n--- Second Line Values ---";
-    qDebug() << "Inclination (degrees):" << tle.inclination;
-    qDebug() << "Right Ascension (degrees):" << tle.rightAscension;
-    qDebug() << "Eccentricity:" << tle.eccentricity;
-    qDebug() << "Argument of Perigee (degrees):" << tle.argumentPerigee;
-    qDebug() << "Mean Anomaly (degrees):" << tle.meanAnomaly;
-    qDebug() << "Mean Motion (revs per day):" << tle.meanMotion;
-    qDebug() << "Revolution Number:" << tle.revolutionNumber;
-
-    qDebug() << "\n--- Computed Values ---";
-    qDebug() << "no (rad/min):" << tle.no;
-    qDebug() << "a (earth radii):" << tle.a;
-    qDebug() << "alta (earth radii):" << tle.alta;
-    qDebug() << "altp (earth radii):" << tle.altp;
-    qDebug() << "jo (rad/min):" << tle.jo;
-
-    qDebug() << "\n--- Original TLE Lines ---";
-    qDebug() << "Line 1:" << "1 57890U 23145E   25020.58965078  .00018142  00000-0  75795-3 0  9993";
-    qDebug() << "Line 2:" << "2 57890  34.9931 183.9858 0003532 252.3040 107.7289 15.22765489 74915";
-
-    qDebug() << "=== End TLE Values ===\n";
-}
-
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
@@ -234,12 +162,8 @@ int main(int argc, char *argv[]) {
 
     auto tle_opt = TLEParser::parseFromTxt(line1, line2);
     if (!tle_opt) {
-        qDebug() << "Failed to parse TLE";
         return 1;
     }
-
-    // Добавьте эту строку
-    debugPrintTLE(*tle_opt);
 
     // Создаем и показываем окно трекера
     SatelliteTracker tracker(*tle_opt);
