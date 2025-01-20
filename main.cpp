@@ -81,47 +81,65 @@ private:
     };
 
     GeographicCoords ecefToGeographic(const Vector3& ecef) {
-        qDebug() << "\n=== Geographic Coordinates Calculation ===";
-        qDebug() << "Input ECEF coordinates (km):" << ecef.x << ecef.y << ecef.z;
+        qDebug() << "\n=== Geographic Coordinates Calculation Debug ===";
+        qDebug() << "Input ECEF coordinates (km):";
+        qDebug() << "X:" << ecef.x;
+        qDebug() << "Y:" << ecef.y;
+        qDebug() << "Z:" << ecef.z;
 
-        const double a = 6378.137; // большая полуось эллипсоида WGS84 (км)
-        const double f = 1.0/298.257223563; // сжатие WGS84
-        const double b = a * (1.0 - f); // малая полуось
-        const double e2 = 2*f - f*f; // квадрат эксцентриситета
+        const double a = 6378.137; // WGS84 semi-major axis (km)
+        const double f = 1.0/298.257223563; // WGS84 flattening
+        const double b = a * (1.0 - f); // semi-minor axis
+        const double e2 = f * (2.0 - f); // square of first eccentricity
+
+        qDebug() << "\n--- WGS84 Parameters ---";
+        qDebug() << "Semi-major axis (km):" << a;
+        qDebug() << "Flattening:" << f;
+        qDebug() << "Semi-minor axis (km):" << b;
+        qDebug() << "Square of eccentricity:" << e2;
 
         const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
         const double theta = atan2(ecef.z*a, p*b);
 
+        qDebug() << "\n--- Intermediate Values ---";
+        qDebug() << "Distance from Z axis (km):" << p;
+        qDebug() << "Parametric latitude (rad):" << theta;
+
         const double sin_theta = sin(theta);
         const double cos_theta = cos(theta);
 
-        // Итеративный метод вычисления широты
-        double latitude = atan2(ecef.z + e2 * (a/b) * a * pow(sin_theta, 3),
-                                p - e2 * a * pow(cos_theta, 3));
+        const double latitude = atan2(
+            ecef.z + e2 * (a/b) * a * pow(sin_theta, 3),
+            p - e2 * a * pow(cos_theta, 3)
+            );
+        const double longitude = atan2(ecef.y, ecef.x);
 
-        // Вычисление долготы
-        double longitude = atan2(ecef.y, ecef.x);
-
-        // Нормализация долготы в диапазон [-π, π]
-        while (longitude > M_PI) longitude -= 2.0 * M_PI;
-        while (longitude < -M_PI) longitude += 2.0 * M_PI;
-
-        // Вычисление высоты
         const double sin_lat = sin(latitude);
         const double N = a / sqrt(1.0 - e2 * sin_lat * sin_lat);
-        const double altitude = p/cos(latitude) - N;
+        const double altitude = p / cos(latitude) - N;
 
         GeographicCoords geo;
         geo.latitude = latitude * 180.0 / M_PI;
         geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
 
-        qDebug() << "Calculated coordinates:";
-        qDebug() << QString("Latitude: %1° %2").arg(fabs(geo.latitude), 0, 'f', 6)
-                        .arg(geo.latitude < 0 ? "S" : "N");
-        qDebug() << QString("Longitude: %1° %2").arg(fabs(geo.longitude), 0, 'f', 6)
-                        .arg(geo.longitude < 0 ? "W" : "E");
-        qDebug() << QString("Altitude: %1 km").arg(geo.altitude, 0, 'f', 3);
+        qDebug() << "\n--- Final Geographic Coordinates ---";
+        qDebug() << "Latitude (rad):" << latitude;
+        qDebug() << "Longitude (rad):" << longitude;
+        qDebug() << "Altitude (km):" << altitude;
+
+        qDebug() << "\n--- Final Coordinates (Degrees) ---";
+        qDebug() << "Latitude (deg):" << geo.latitude;
+        qDebug() << "Longitude (deg):" << geo.longitude;
+        qDebug() << "Altitude (km):" << geo.altitude;
+
+        qDebug() << "\n--- Validation ---";
+        qDebug() << "Latitude in range [-90,90]:" << (geo.latitude >= -90 && geo.latitude <= 90);
+        qDebug() << "Longitude in range [-180,180]:" << (geo.longitude >= -180 && geo.longitude <= 180);
+        qDebug() << "Reasonable altitude (100-2000 km):" << (geo.altitude >= 100 && geo.altitude <= 2000);
+        qDebug() << "Orbital radius (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
+        qDebug() << "Height above Earth's surface (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z) - a;
+        qDebug() << "=== End Geographic Coordinates Calculation ===\n";
 
         return geo;
     }
@@ -143,13 +161,8 @@ private slots:
         GeographicCoords geo = ecefToGeographic(state.position);
 
         // Обновляем метки с географическими координатами
-        QString latStr = QString("Latitude: %1° %2").arg(fabs(geo.latitude), 0, 'f', 6)
-                             .arg(geo.latitude < 0 ? "S" : "N");
-        QString lonStr = QString("Longitude: %1° %2").arg(fabs(geo.longitude), 0, 'f', 6)
-                             .arg(geo.longitude < 0 ? "W" : "E");
-
-        latitudeLabel_->setText(latStr);
-        longitudeLabel_->setText(lonStr);
+        latitudeLabel_->setText(QString("Latitude: %1°").arg(geo.latitude, 0, 'f', 6));
+        longitudeLabel_->setText(QString("Longitude: %1°").arg(geo.longitude, 0, 'f', 6));
         altitudeLabel_->setText(QString("Altitude: %1 km").arg(geo.altitude, 0, 'f', 3));
 
         // Вычисляем скорость

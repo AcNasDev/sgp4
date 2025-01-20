@@ -60,21 +60,22 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     qDebug() << "\n=== SGP4 Position Calculation Debug ===";
     qDebug() << "Input UTC time:" << time.toString("yyyy-MM-dd HH:mm:ss");
 
-    // Calculate epoch time
+    // Расчет времени с эпохи
     int year = tle_.epochYear;
-    if (year < 57) year += 2000;
-    else year += 1900;
+    if (year < 57) {
+        year += 2000;
+    } else {
+        year += 1900;
+    }
 
     QDateTime epoch = QDateTime(QDate(year, 1, 1), QTime(0, 0), Qt::UTC);
     epoch = epoch.addSecs(static_cast<qint64>((tle_.epochDay - 1.0) * 86400.0));
+    double tsince = epoch.secsTo(time) / 60.0;  // время в минутах
 
     qDebug() << "Epoch time:" << epoch.toString("yyyy-MM-dd HH:mm:ss");
-
-    // Calculate time since epoch
-    double tsince = epoch.secsTo(time) / 60.0;  // Convert to minutes
     qDebug() << "Time since epoch (minutes):" << tsince;
 
-    // Compute angles
+    // Вычисление средней аномалии, аргумента перигея и прямого восхождения
     double xmo = fmod(tle_.meanAnomaly * M_PI / 180.0 + xmdot_ * tsince, 2.0 * M_PI);
     double omegao = tle_.argumentPerigee * M_PI / 180.0 + omgdot_ * tsince;
     double xno = tle_.rightAscension * M_PI / 180.0 + xnodot_ * tsince;
@@ -84,39 +85,48 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     qDebug() << "Argument of Perigee (rad):" << omegao;
     qDebug() << "Right Ascension (rad):" << xno;
 
-    // Solve Kepler's equation
+    // Улучшенное решение уравнения Кеплера
     double e = tle_.eccentricity;
-    double E = xmo;
+    double E = xmo;  // начальное приближение
+    double delta;
     int iter = 0;
+    const int maxIter = 30;
+    const double tolerance = 1e-12;
 
     qDebug() << "\n--- Kepler's Equation Solution ---";
-    for (int i = 0; i < 10; i++) {
-        double E_new = E - (E - e * sin(E) - xmo) / (1.0 - e * cos(E));
-        double delta = std::abs(E_new - E);
-        E = E_new;
-        iter = i + 1;
-        qDebug() << "Iteration" << iter << "- E:" << E << "Delta:" << delta;
-        if (delta < 1e-12) break;
-    }
+    do {
+        double E_old = E;
+        double sinE = sin(E);
+        double cosE = cos(E);
 
-    // Calculate true anomaly
+        // Метод Ньютона-Рафсона с регуляризацией
+        delta = (E - e * sinE - xmo) / (1.0 - e * cosE);
+        if (fabs(delta) > 0.5) {
+            delta = copysign(0.5, delta);
+        }
+        E = E_old - delta;
+
+        iter++;
+        qDebug() << "Iteration" << iter << "- E:" << E << "Delta:" << fabs(delta);
+    } while (fabs(delta) > tolerance && iter < maxIter);
+
+    // Вычисление истинной аномалии
     double sinE = sin(E);
     double cosE = cos(E);
     double sinv = sqrt(1.0 - e * e) * sinE / (1.0 - e * cosE);
     double cosv = (cosE - e) / (1.0 - e * cosE);
     double nu = atan2(sinv, cosv);
 
+    // Вычисление позиции в орбитальной плоскости
+    double r = tle_.a * XKMPER * (1.0 - e * cosE);  // радиус в км
+    double u = omegao + nu;  // аргумент широты
+
     qDebug() << "\n--- Position Calculation ---";
     qDebug() << "True Anomaly (rad):" << nu;
-
-    // Calculate position in orbital plane
-    double r = tle_.a * XKMPER * (1.0 - e * cosE);
-    double u = omegao + nu;
-
     qDebug() << "Radius vector (km):" << r;
     qDebug() << "Argument of latitude (rad):" << u;
 
-    // Convert to geocentric coordinates
+    // Тригонометрические функции для преобразования координат
     double sin_u = sin(u);
     double cos_u = cos(u);
     double sin_i = sinio_;
@@ -124,86 +134,144 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     double sin_node = sin(xno);
     double cos_node = cos(xno);
 
-    Vector3 pos;
-    pos.x = r * (cos_node * cos_u - sin_node * sin_u * cos_i);
-    pos.y = r * (sin_node * cos_u + cos_node * sin_u * cos_i);
-    pos.z = r * sin_u * sin_i;
+    // Позиция в ECI координатах
+    Vector3 pos_eci;
+    pos_eci.x = r * (cos_node * cos_u - sin_node * sin_u * cos_i);
+    pos_eci.y = r * (sin_node * cos_u + cos_node * sin_u * cos_i);
+    pos_eci.z = r * sin_u * sin_i;
 
-    qDebug() << "\n--- Final Position (km) ---";
-    qDebug() << "X:" << pos.x;
-    qDebug() << "Y:" << pos.y;
-    qDebug() << "Z:" << pos.z;
-
-    // Calculate velocity
+    // Вычисление скорости в ECI
     double xn = xnodp_;
-    xn = xn / 60.0;  // Добавляем эту строку!
     double rdot = xn * tle_.a * XKMPER * e * sinE / sqrt(1.0 - e * e);
     double rfdot = xn * tle_.a * XKMPER * sqrt(1.0 - e * e) / (1.0 - e * cosE);
 
-    qDebug() << "\n--- Velocity Components ---";
-    qDebug() << "Radial velocity (km/s):" << rdot;
-    qDebug() << "Cross-track velocity (km/s):" << rfdot;
+    Vector3 vel_eci;
+    vel_eci.x = rdot * (cos_node * cos_u - sin_node * sin_u * cos_i) -
+                rfdot * (cos_node * sin_u + sin_node * cos_u * cos_i);
+    vel_eci.y = rdot * (sin_node * cos_u + cos_node * sin_u * cos_i) -
+                rfdot * (sin_node * sin_u - cos_node * cos_u * cos_i);
+    vel_eci.z = rdot * sin_u * sin_i + rfdot * cos_u * sin_i;
 
-    Vector3 vel;
-    vel.x = rdot * (cos_node * cos_u - sin_node * sin_u * cos_i) -
-            rfdot * (cos_node * sin_u + sin_node * cos_u * cos_i);
-    vel.y = rdot * (sin_node * cos_u + cos_node * sin_u * cos_i) -
-            rfdot * (sin_node * sin_u - cos_node * cos_u * cos_i);
-    vel.z = rdot * sin_u * sin_i + rfdot * cos_u * sin_i;
+    // Учет возмущений
+    calculatePerturbations(tsince, pos_eci, vel_eci);
 
-    qDebug() << "\n--- Final Velocity (km/s) ---";
-    qDebug() << "VX:" << vel.x;
-    qDebug() << "VY:" << vel.y;
-    qDebug() << "VZ:" << vel.z;
+    // Вычисление GMST
+    double gmst = calculateGMST(time);
 
-    qDebug() << "=== End SGP4 Position Calculation ===\n";
-
-    // Рассчитываем GMST (Greenwich Mean Sidereal Time)
-    QDateTime j2000(QDate(2000, 1, 1), QTime(12, 0), Qt::UTC);
-    double days_since_j2000 = j2000.secsTo(time) / 86400.0;
-
-    // Расчет GMST в градусах
-    // T = количество юлианских столетий с J2000
-    double T = days_since_j2000 / 36525.0;
-
-    // Формула для расчета GMST в градусах
-    double gmst = 280.46061837 +
-                  360.98564736629 * days_since_j2000 +
-                  0.000387933 * T * T -
-                  T * T * T / 38710000.0;
-
-    // Нормализация в диапазон [0, 360]
-    gmst = fmod(gmst, 360.0);
-    if (gmst < 0) gmst += 360.0;
-
-    // Преобразование в радианы для дальнейших вычислений
-    double gmst_rad = gmst * M_PI / 180.0;
-
-    // Преобразование из ECI в ECEF
+    // Преобразование в ECEF координаты
     Vector3 pos_ecef;
-    pos_ecef.x = pos.x * cos(gmst_rad) + pos.y * sin(gmst_rad);
-    pos_ecef.y = -pos.x * sin(gmst_rad) + pos.y * cos(gmst_rad);
-    pos_ecef.z = pos.z;
+    pos_ecef.x = pos_eci.x * cos(gmst) + pos_eci.y * sin(gmst);
+    pos_ecef.y = -pos_eci.x * sin(gmst) + pos_eci.y * cos(gmst);
+    pos_ecef.z = pos_eci.z;
 
-    // Угловая скорость вращения Земли (рад/с)
-    const double earth_rotation_rate = 7.2921150e-5;
-
-    // Преобразование скорости из ECI в ECEF
+    // Преобразование скорости в ECEF
+    const double earth_rotation_rate = 7.2921150e-5;  // рад/с
     Vector3 vel_ecef;
-    vel_ecef.x = vel.x * cos(gmst_rad) + vel.y * sin(gmst_rad) -
+    vel_ecef.x = vel_eci.x * cos(gmst) + vel_eci.y * sin(gmst) -
                  earth_rotation_rate * pos_ecef.y;
-    vel_ecef.y = -vel.x * sin(gmst_rad) + vel.y * cos(gmst_rad) +
+    vel_ecef.y = -vel_eci.x * sin(gmst) + vel_eci.y * cos(gmst) +
                  earth_rotation_rate * pos_ecef.x;
-    vel_ecef.z = vel.z;
+    vel_ecef.z = vel_eci.z;
 
-    qDebug() << "\n=== SGP4 Position and GMST Calculation ===";
-    qDebug() << "UTC time:" << time.toString("yyyy-MM-dd HH:mm:ss");
-    qDebug() << "Days since J2000:" << days_since_j2000;
-    qDebug() << "Julian centuries T:" << T;
-    qDebug() << "GMST (degrees):" << gmst;
-    qDebug() << "GMST (radians):" << gmst_rad;
-    qDebug() << "ECI position (km):" << pos.x << pos.y << pos.z;
-    qDebug() << "ECEF position (km):" << pos_ecef.x << pos_ecef.y << pos_ecef.z;
+    // Учет полярного движения
+    PolarMotion pm = {0.1, 0.2};  // Примерные значения, нужно получать актуальные
+    pos_ecef = applyPolarMotion(pos_ecef, pm);
+
+    qDebug() << "\n--- Final Position and Velocity ---";
+    qDebug() << "ECEF Position (km):" << pos_ecef.x << pos_ecef.y << pos_ecef.z;
+    qDebug() << "ECEF Velocity (km/s):" << vel_ecef.x << vel_ecef.y << vel_ecef.z;
 
     return OrbitalState{pos_ecef, vel_ecef};
+}
+
+// Добавим новую функцию в класс SGP4
+double SGP4::calculateGMST(const QDateTime& time) const {
+    // JD - юлианская дата для 0h UTC
+    QDateTime midnight = QDateTime(time.date(), QTime(0,0), Qt::UTC);
+    double JD = 2451545.0 + midnight.date().toJulianDay() - QDate(2000,1,1).toJulianDay();
+
+    // UT1 в десятичных часах
+    double UT1 = time.time().hour() +
+                 time.time().minute()/60.0 +
+                 time.time().second()/3600.0;
+
+    // T - юлианские столетия от J2000
+    double T = JD/36525.0;
+
+    // Вычисление GMST в градусах
+    double GMST = 280.46061837 +
+                  360.98564736629 * (JD - 2451545.0) +
+                  0.000387933 * T * T -
+                  T * T * T / 38710000.0 +
+                  UT1 * 15.0;
+
+    // Нормализация в диапазон [0, 360]
+    GMST = fmod(GMST, 360.0);
+    if (GMST < 0) GMST += 360.0;
+
+    return GMST * M_PI / 180.0; // возвращаем в радианах
+}
+
+Vector3 SGP4::applyPolarMotion(const Vector3& ecef, const PolarMotion& pm) const {
+    // Преобразование угловых секунд в радианы
+    double xp = pm.xp * M_PI / (180.0 * 3600.0);
+    double yp = pm.yp * M_PI / (180.0 * 3600.0);
+
+    // Матрица поворота для учета полярного движения
+    Vector3 result;
+    result.x = ecef.x - ecef.y*xp + ecef.z*yp;
+    result.y = ecef.x*xp + ecef.y - ecef.z*xp*yp;
+    result.z = -ecef.x*yp + ecef.y*xp*yp + ecef.z;
+
+    return result;
+}
+void SGP4::calculatePerturbations(double tsince, Vector3& pos, Vector3& vel) const {
+    // Возмущения от J2
+    double r = sqrt(pos.x*pos.x + pos.y*pos.y + pos.z*pos.z);
+    double r2 = r * r;
+    double r3 = r2 * r;
+    double r4 = r3 * r;
+
+    double z2 = pos.z * pos.z / r2;
+    double j2Effect = 1.5 * CK2 / r2;
+
+    // Возмущения положения
+    pos.x *= (1.0 - j2Effect * (1.0 - 5.0 * z2));
+    pos.y *= (1.0 - j2Effect * (1.0 - 5.0 * z2));
+    pos.z *= (1.0 - j2Effect * (3.0 - 5.0 * z2));
+
+    // Возмущения скорости
+    double vDotR = (vel.x*pos.x + vel.y*pos.y + vel.z*pos.z) / r;
+    double j2Vel = 1.5 * CK2 / r3;
+
+    vel.x -= j2Vel * (pos.x/r * (1.0 - 5.0*z2) + 2.0*pos.z*pos.z/r2);
+    vel.y -= j2Vel * (pos.y/r * (1.0 - 5.0*z2) + 2.0*pos.z*pos.z/r2);
+    vel.z -= j2Vel * (pos.z/r * (3.0 - 5.0*z2) + 2.0*pos.z);
+}
+
+double SGP4::solveKepler(double M, double e, double tolerance) const {
+    double E = M;
+    double delta;
+    int iter = 0;
+    const int maxIter = 30;
+
+    do {
+        double E_old = E;
+        double sinE = sin(E);
+        double cosE = cos(E);
+
+        // Метод Ньютона-Рафсона с регуляризацией
+        delta = (E - e * sinE - M) / (1.0 - e * cosE);
+        E = E_old - delta;
+
+        // Предотвращение расходимости
+        if (fabs(delta) > 0.5) {
+            delta = copysign(0.5, delta);
+            E = E_old - delta;
+        }
+
+        iter++;
+    } while (fabs(delta) > tolerance && iter < maxIter);
+
+    return E;
 }

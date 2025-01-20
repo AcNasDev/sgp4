@@ -11,6 +11,10 @@ public:
     OrbitalState getPosition(const QDateTime& time) const;
 
 private:
+    struct PolarMotion {
+        double xp; // в угловых секундах
+        double yp; // в угловых секундах
+    };
     static constexpr double XKE = 0.743669161E-1;
     static constexpr double AE = 1.0;
     static constexpr double XKMPER = 6378.137;    // Earth's radius in km
@@ -31,4 +35,8 @@ private:
     double xlldot_;
     double xnodot_;
     double xnodp_;
+    double calculateGMST(const QDateTime &time) const;
+    Vector3 applyPolarMotion(const Vector3 &ecef, const PolarMotion &pm) const;
+    void calculatePerturbations(double tsince, Vector3 &pos, Vector3 &vel) const;
+    double solveKepler(double M, double e, double tolerance = 1e-12) const;
 };
