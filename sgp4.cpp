@@ -189,7 +189,7 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     qDebug() << "ECI velocity (km/s):" << vel.x << vel.y << vel.z;
     qDebug() << "ECEF velocity (km/s):" << vel_ecef.x << vel_ecef.y << vel_ecef.z;
 
-    return OrbitalState{pos_ecef, vel_ecef};
+    // return OrbitalState{pos_ecef, vel_ecef};
 
     return OrbitalState{pos, vel};
 }
