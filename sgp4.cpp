@@ -158,29 +158,5 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
 
     qDebug() << "=== End SGP4 Position Calculation ===\n";
 
-    QDateTime j2000(QDate(2000, 1, 1), QTime(12, 0), Qt::UTC);
-    double days_since_j2000 = j2000.daysTo(time) + time.time().msecsSinceStartOfDay() / (1000.0 * 86400.0);
-
-    // GMST в радианах
-    double gmst = fmod(280.4606 + 360.9856473 * days_since_j2000, 360.0) * M_PI / 180.0;
-
-    // Поворот против часовой стрелки вокруг оси Z
-    double x_rot = pos.x * cos(gmst) - pos.y * sin(gmst);
-    double y_rot = pos.x * sin(gmst) + pos.y * cos(gmst);
-    double z_rot = pos.z;
-
-    pos.x = x_rot;
-    pos.y = y_rot;
-    pos.z = z_rot;
-
-    // Поворот вектора скорости
-    double vx_rot = vel.x * cos(gmst) - vel.y * sin(gmst);
-    double vy_rot = vel.x * sin(gmst) + vel.y * cos(gmst);
-    double vz_rot = vel.z;
-
-    vel.x = vx_rot;
-    vel.y = vy_rot;
-    vel.z = vz_rot;
-
     return OrbitalState{pos, vel};
 }
