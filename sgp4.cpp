@@ -158,5 +158,38 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
 
     qDebug() << "=== End SGP4 Position Calculation ===\n";
 
+    QDateTime j2000(QDate(2000, 1, 1), QTime(12, 0), Qt::UTC);
+    double days_since_j2000 = j2000.daysTo(time) + time.time().msecsSinceStartOfDay() / (1000.0 * 86400.0);
+
+    // GMST в радианах
+    double gmst = fmod(280.4606 + 360.9856473 * days_since_j2000, 360.0) * M_PI / 180.0;
+
+    // На этом этапе pos и vel находятся в системе ECI
+    // Преобразуем их в ECEF, учитывая вращение Земли
+
+    // Преобразование позиции из ECI в ECEF
+    Vector3 pos_ecef;
+    pos_ecef.x = pos.x * cos(gmst) + pos.y * sin(gmst);
+    pos_ecef.y = -pos.x * sin(gmst) + pos.y * cos(gmst);
+    pos_ecef.z = pos.z;
+
+    // Угловая скорость вращения Земли (рад/с)
+    const double earth_rotation_rate = 7.2921150e-5;
+
+    // Преобразование скорости из ECI в ECEF
+    Vector3 vel_ecef;
+    vel_ecef.x = vel.x * cos(gmst) + vel.y * sin(gmst) - earth_rotation_rate * pos_ecef.y;
+    vel_ecef.y = -vel.x * sin(gmst) + vel.y * cos(gmst) + earth_rotation_rate * pos_ecef.x;
+    vel_ecef.z = vel.z;
+
+    qDebug() << "ECI to ECEF conversion:";
+    qDebug() << "GMST (degrees):" << gmst * 180.0 / M_PI;
+    qDebug() << "ECI position (km):" << pos.x << pos.y << pos.z;
+    qDebug() << "ECEF position (km):" << pos_ecef.x << pos_ecef.y << pos_ecef.z;
+    qDebug() << "ECI velocity (km/s):" << vel.x << vel.y << vel.z;
+    qDebug() << "ECEF velocity (km/s):" << vel_ecef.x << vel_ecef.y << vel_ecef.z;
+
+    return OrbitalState{pos_ecef, vel_ecef};
+
     return OrbitalState{pos, vel};
 }
