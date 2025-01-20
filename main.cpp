@@ -87,43 +87,35 @@ private:
         qDebug() << "Y:" << ecef.y;
         qDebug() << "Z:" << ecef.z;
 
-        const double a = 6378.137; // WGS84 Earth radius in kilometers
-        const double f = 1.0 / 298.257223563; // WGS84 flattening
+        const double a = 6378.137; // WGS84 semi-major axis (km)
+        const double f = 1.0/298.257223563; // WGS84 flattening
         const double b = a * (1.0 - f); // semi-minor axis
-        const double e2 = 2*f - f*f; // square of eccentricity
+        const double e2 = f * (2.0 - f); // square of first eccentricity
 
         qDebug() << "\n--- WGS84 Parameters ---";
-        qDebug() << "Earth radius (km):" << a;
+        qDebug() << "Semi-major axis (km):" << a;
         qDebug() << "Flattening:" << f;
+        qDebug() << "Semi-minor axis (km):" << b;
         qDebug() << "Square of eccentricity:" << e2;
 
-        // Calculate longitude first (easier)
-        const double longitude = atan2(ecef.y, ecef.x);
-
-        // Calculate distance from Z axis
-        const double p = sqrt(ecef.x * ecef.x + ecef.y * ecef.y);
+        const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
+        const double theta = atan2(ecef.z*a, p*b);
 
         qDebug() << "\n--- Intermediate Values ---";
         qDebug() << "Distance from Z axis (km):" << p;
+        qDebug() << "Parametric latitude (rad):" << theta;
 
-        // Calculate latitude iteratively
-        double latitude = atan2(ecef.z, p * (1.0 - e2));
-        double prevLat;
-        int iterations = 0;
+        const double sin_theta = sin(theta);
+        const double cos_theta = cos(theta);
 
-        do {
-            prevLat = latitude;
-            const double sinLat = sin(latitude);
-            const double N = a / sqrt(1.0 - e2 * sinLat * sinLat);
-            latitude = atan2(ecef.z + e2 * N * sinLat, p);
-            iterations++;
+        const double latitude = atan2(
+            ecef.z + e2 * (a/b) * a * pow(sin_theta, 3),
+            p - e2 * a * pow(cos_theta, 3)
+            );
+        const double longitude = atan2(ecef.y, ecef.x);
 
-            qDebug() << "Iteration" << iterations << "latitude (rad):" << latitude;
-        } while (fabs(latitude - prevLat) > 1e-10 && iterations < 10);
-
-        // Calculate height above ellipsoid
-        const double sinLat = sin(latitude);
-        const double N = a / sqrt(1.0 - e2 * sinLat * sinLat);
+        const double sin_lat = sin(latitude);
+        const double N = a / sqrt(1.0 - e2 * sin_lat * sin_lat);
         const double altitude = p / cos(latitude) - N;
 
         GeographicCoords geo;
@@ -131,19 +123,22 @@ private:
         geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
 
-        qDebug() << "\n--- Final Coordinates ---";
+        qDebug() << "\n--- Final Geographic Coordinates ---";
+        qDebug() << "Latitude (rad):" << latitude;
+        qDebug() << "Longitude (rad):" << longitude;
+        qDebug() << "Altitude (km):" << altitude;
+
+        qDebug() << "\n--- Final Coordinates (Degrees) ---";
         qDebug() << "Latitude (deg):" << geo.latitude;
         qDebug() << "Longitude (deg):" << geo.longitude;
         qDebug() << "Altitude (km):" << geo.altitude;
 
-        // Validation
         qDebug() << "\n--- Validation ---";
-        qDebug() << "Original radius vector (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
-        qDebug() << "Computed ground distance (km):" << p;
-        qDebug() << "Iterations required:" << iterations;
         qDebug() << "Latitude in range [-90,90]:" << (geo.latitude >= -90 && geo.latitude <= 90);
         qDebug() << "Longitude in range [-180,180]:" << (geo.longitude >= -180 && geo.longitude <= 180);
-
+        qDebug() << "Reasonable altitude (100-2000 km):" << (geo.altitude >= 100 && geo.altitude <= 2000);
+        qDebug() << "Orbital radius (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
+        qDebug() << "Height above Earth's surface (km):" << sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z) - a;
         qDebug() << "=== End Geographic Coordinates Calculation ===\n";
 
         return geo;
