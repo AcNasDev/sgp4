@@ -81,6 +81,9 @@ private:
     };
 
     GeographicCoords ecefToGeographic(const Vector3& ecef) {
+        qDebug() << "\n=== Geographic Coordinates Calculation ===";
+        qDebug() << "Input ECEF coordinates (km):" << ecef.x << ecef.y << ecef.z;
+
         const double a = 6378.137; // большая полуось эллипсоида WGS84 (км)
         const double f = 1.0/298.257223563; // сжатие WGS84
         const double b = a * (1.0 - f); // малая полуось
@@ -89,19 +92,19 @@ private:
         const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
         const double theta = atan2(ecef.z*a, p*b);
 
-        // Вычисление широты
-        const double latitude = atan2(
-            ecef.z + e2 * (a/b) * a * pow(sin(theta), 3),
-            p - e2 * a * pow(cos(theta), 3)
-            );
+        const double sin_theta = sin(theta);
+        const double cos_theta = cos(theta);
+
+        // Итеративный метод вычисления широты
+        double latitude = atan2(ecef.z + e2 * (a/b) * a * pow(sin_theta, 3),
+                                p - e2 * a * pow(cos_theta, 3));
 
         // Вычисление долготы
         double longitude = atan2(ecef.y, ecef.x);
 
-        // Преобразование долготы в диапазон [-180, 180]
-        longitude = longitude * 180.0 / M_PI;
-        while (longitude > 180.0) longitude -= 360.0;
-        while (longitude < -180.0) longitude += 360.0;
+        // Нормализация долготы в диапазон [-π, π]
+        while (longitude > M_PI) longitude -= 2.0 * M_PI;
+        while (longitude < -M_PI) longitude += 2.0 * M_PI;
 
         // Вычисление высоты
         const double sin_lat = sin(latitude);
@@ -109,9 +112,16 @@ private:
         const double altitude = p/cos(latitude) - N;
 
         GeographicCoords geo;
-        geo.latitude = latitude * 180.0 / M_PI;  // широта в градусах
-        geo.longitude = longitude;                // долгота уже в градусах
+        geo.latitude = latitude * 180.0 / M_PI;
+        geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
+
+        qDebug() << "Calculated coordinates:";
+        qDebug() << QString("Latitude: %1° %2").arg(fabs(geo.latitude), 0, 'f', 6)
+                        .arg(geo.latitude < 0 ? "S" : "N");
+        qDebug() << QString("Longitude: %1° %2").arg(fabs(geo.longitude), 0, 'f', 6)
+                        .arg(geo.longitude < 0 ? "W" : "E");
+        qDebug() << QString("Altitude: %1 km").arg(geo.altitude, 0, 'f', 3);
 
         return geo;
     }
