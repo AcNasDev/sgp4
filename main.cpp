@@ -81,27 +81,73 @@ private:
     };
 
     GeographicCoords ecefToGeographic(const Vector3& ecef) {
-        const double a = 6378.137; // большая полуось эллипсоида WGS84 (км)
-        const double f = 1.0/298.257223563; // сжатие WGS84
-        const double b = a * (1.0 - f); // малая полуось
-        const double e = sqrt(1.0 - (b*b)/(a*a)); // эксцентриситет
+        qDebug() << "\n=== Geographic Coordinates Calculation Debug ===";
+        qDebug() << "Input ECEF coordinates (km):";
+        qDebug() << "X:" << ecef.x;
+        qDebug() << "Y:" << ecef.y;
+        qDebug() << "Z:" << ecef.z;
 
+        // WGS84 ellipsoid parameters
+        const double a = 6378.137; // semi-major axis (km)
+        const double f = 1.0/298.257223563; // flattening
+        const double b = a * (1.0 - f); // semi-minor axis (km)
+        const double e = sqrt(1.0 - (b*b)/(a*a)); // eccentricity
+
+        qDebug() << "\n--- WGS84 Parameters ---";
+        qDebug() << "Semi-major axis (km):" << a;
+        qDebug() << "Flattening:" << f;
+        qDebug() << "Semi-minor axis (km):" << b;
+        qDebug() << "Eccentricity:" << e;
+
+        // Calculate intermediate values
         const double p = sqrt(ecef.x*ecef.x + ecef.y*ecef.y);
         const double theta = atan2(a*ecef.z, b*p);
 
+        qDebug() << "\n--- Intermediate Values ---";
+        qDebug() << "p (distance from Z axis) (km):" << p;
+        qDebug() << "theta (parametric latitude) (rad):" << theta;
+
+        // Calculate longitude
         const double longitude = atan2(ecef.y, ecef.x);
+
+        // Calculate latitude using improved algorithm
         const double latitude = atan2(
             ecef.z + (e*e*(a/b))*a*pow(sin(theta), 3),
             p - (e*e)*a*pow(cos(theta), 3)
             );
 
+        // Calculate altitude
         const double N = a / sqrt(1.0 - e*e*sin(latitude)*sin(latitude));
         const double altitude = p/cos(latitude) - N;
 
+        qDebug() << "\n--- Final Geographic Coordinates ---";
+        qDebug() << "Latitude (rad):" << latitude;
+        qDebug() << "Longitude (rad):" << longitude;
+        qDebug() << "Altitude (km):" << altitude;
+
+        // Convert to degrees
         GeographicCoords geo;
         geo.latitude = latitude * 180.0 / M_PI;
         geo.longitude = longitude * 180.0 / M_PI;
         geo.altitude = altitude;
+
+        qDebug() << "\n--- Final Coordinates (Degrees) ---";
+        qDebug() << "Latitude (deg):" << geo.latitude;
+        qDebug() << "Longitude (deg):" << geo.longitude;
+        qDebug() << "Altitude (km):" << geo.altitude;
+
+        // Validation checks
+        qDebug() << "\n--- Validation ---";
+        qDebug() << "Latitude in range [-90,90]:" << (geo.latitude >= -90 && geo.latitude <= 90);
+        qDebug() << "Longitude in range [-180,180]:" << (geo.longitude >= -180 && geo.longitude <= 180);
+        qDebug() << "Reasonable altitude (100-2000 km):" << (geo.altitude >= 100 && geo.altitude <= 2000);
+
+        // Calculate ground track speed
+        double r = sqrt(ecef.x*ecef.x + ecef.y*ecef.y + ecef.z*ecef.z);
+        qDebug() << "Orbital radius (km):" << r;
+        qDebug() << "Height above Earth's surface (km):" << (r - a);
+
+        qDebug() << "=== End Geographic Coordinates Calculation ===\n";
 
         return geo;
     }
