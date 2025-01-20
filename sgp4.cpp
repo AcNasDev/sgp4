@@ -8,16 +8,24 @@ SGP4::SGP4(const TLE& tle) : tle_(tle) {
 }
 
 void SGP4::initializeParameters() {
-    // Convert TLE mean motion to internal units (rad/min)
-    tle_.no = tle_.meanMotion * 2.0 * M_PI / 1440.0;
+    // Constants
+    const double MINUTES_PER_DAY = 1440.0;
+    const double TWO_PI = 2.0 * M_PI;
+    const double XKE = 0.743669161E-1;
+    const double GM = 398600.4418; // Earth's gravitational constant (km³/s²)
 
-    // Semi-major axis (earth radii)
-    tle_.a = pow(XKE / tle_.no, 2.0/3.0);
+    // Convert mean motion from revs/day to rad/min
+    tle_.no = tle_.meanMotion * TWO_PI / MINUTES_PER_DAY;
 
-    // Compute perigee and apogee
-    double e = tle_.eccentricity;
-    tle_.alta = tle_.a * (1.0 + e) - 1.0;
-    tle_.altp = tle_.a * (1.0 - e) - 1.0;
+    // Calculate semi-major axis
+    double n = tle_.meanMotion * TWO_PI / 86400.0; // Convert to rad/sec
+    double a3 = GM / (n * n);
+    double a = std::pow(a3, 1.0/3.0); // Semi-major axis in km
+    tle_.a = a / XKMPER; // Convert to Earth radii
+
+    // Compute perigee and apogee (in Earth radii)
+    tle_.alta = tle_.a * (1.0 + tle_.eccentricity) - 1.0;
+    tle_.altp = tle_.a * (1.0 - tle_.eccentricity) - 1.0;
 
     // Initialize additional parameters
     aodp_ = tle_.a;

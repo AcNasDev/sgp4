@@ -149,6 +149,44 @@ private:
     QLabel* velocityLabel_;
 };
 
+void debugPrintTLE(const TLE& tle) {
+    qDebug() << "\n=== TLE Values After Parsing ===";
+
+    qDebug() << "\n--- First Line Values ---";
+    qDebug() << "Satellite Number:" << tle.satelliteNumber;
+    qDebug() << "Classification:" << tle.classification;
+    qDebug() << "International Designator:" << QString::fromStdString(tle.internationalDesignator);
+    qDebug() << "Epoch Year:" << tle.epochYear;
+    qDebug() << "Epoch Day:" << tle.epochDay;
+    qDebug() << "First Derivative Mean Motion:" << tle.firstDerivativeMeanMotion;
+    qDebug() << "Second Derivative Mean Motion:" << tle.secondDerivativeMeanMotion;
+    qDebug() << "B* drag term:" << tle.bstar;
+    qDebug() << "Ephemeris Type:" << tle.ephemerisType;
+    qDebug() << "Element Number:" << tle.elementNumber;
+
+    qDebug() << "\n--- Second Line Values ---";
+    qDebug() << "Inclination (degrees):" << tle.inclination;
+    qDebug() << "Right Ascension (degrees):" << tle.rightAscension;
+    qDebug() << "Eccentricity:" << tle.eccentricity;
+    qDebug() << "Argument of Perigee (degrees):" << tle.argumentPerigee;
+    qDebug() << "Mean Anomaly (degrees):" << tle.meanAnomaly;
+    qDebug() << "Mean Motion (revs per day):" << tle.meanMotion;
+    qDebug() << "Revolution Number:" << tle.revolutionNumber;
+
+    qDebug() << "\n--- Computed Values ---";
+    qDebug() << "no (rad/min):" << tle.no;
+    qDebug() << "a (earth radii):" << tle.a;
+    qDebug() << "alta (earth radii):" << tle.alta;
+    qDebug() << "altp (earth radii):" << tle.altp;
+    qDebug() << "jo (rad/min):" << tle.jo;
+
+    qDebug() << "\n--- Original TLE Lines ---";
+    qDebug() << "Line 1:" << "1 57890U 23145E   25020.52408874  .00019534  00000-0  81581-3 0  9999";
+    qDebug() << "Line 2:" << "2 57890  34.9931 184.3980 0003522 251.7861 108.2470 15.22764851 74908";
+
+    qDebug() << "=== End TLE Values ===\n";
+}
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
@@ -156,12 +194,14 @@ int main(int argc, char *argv[]) {
     QString line1 = "1 57890U 23145E   25020.52408874  .00019534  00000-0  81581-3 0  9999";
     QString line2 = "2 57890  34.9931 184.3980 0003522 251.7861 108.2470 15.22764851 74908";
 
-    // Парсинг TLE
     auto tle_opt = TLEParser::parseFromTxt(line1, line2);
     if (!tle_opt) {
         qDebug() << "Failed to parse TLE";
         return 1;
     }
+
+    // Добавьте эту строку
+    debugPrintTLE(*tle_opt);
 
     // Создаем и показываем окно трекера
     SatelliteTracker tracker(*tle_opt);
