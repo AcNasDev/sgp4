@@ -17,14 +17,20 @@ void SGP4::initializeParameters() {
     double e = tle_.eccentricity;
     tle_.alta = tle_.a * (1.0 + e) - 1.0;
     tle_.altp = tle_.a * (1.0 - e) - 1.0;
+
+    // Initialize aodp_ and xnodp_
+    aodp_ = tle_.a;
+    xnodp_ = tle_.no;
 }
 
 void SGP4::calculateConstants() {
     // Convert degrees to radians
     double rad_per_deg = M_PI / 180.0;
-    double temp = tle_.inclination * rad_per_deg;
-    cosio_ = cos(temp);
-    sinio_ = sin(temp);
+
+    // Calculate orientation angles in radians
+    double xincl = tle_.inclination * rad_per_deg;
+    cosio_ = cos(xincl);
+    sinio_ = sin(xincl);
 
     // Calculate Earth's gravity field
     double theta2 = cosio_ * cosio_;
@@ -38,37 +44,41 @@ void SGP4::calculateConstants() {
     double temp2 = -0.5 * temp1;
     double temp3 = -0.5 * CK2 * x3thm1;
 
-    xmdot_ = tle_.no + temp1 * tle_.no;
+    xmdot_ = tle_.no * (1.0 + temp1);
     omgdot_ = temp2 * tle_.no;
     xnodot_ = temp3 * tle_.no;
 }
 
 OrbitalState SGP4::getPosition(const QDateTime& time) const {
     // Calculate time since epoch in minutes
-    QDateTime epoch = QDateTime::fromString(
-        QString("%1%2").arg(tle_.epochYear).arg(tle_.epochDay, 0, 'f', 8),
-        "yy.dddddddd");
+    int year = tle_.epochYear;
+    if (year < 57) year += 2000;
+    else year += 1900;
 
-    double tsince = epoch.msecsTo(time) / (1000.0 * 60.0);  // Convert to minutes
+    QDateTime epoch = QDateTime(QDate(year, 1, 1), QTime(0, 0), Qt::UTC);
+    epoch = epoch.addSecs(static_cast<qint64>((tle_.epochDay - 1.0) * 86400.0));
+
+    double tsince = epoch.secsTo(time) / 60.0;  // Convert to minutes
 
     // Implementation of the SGP4 propagator
-    // This is a simplified version - full implementation would be much longer
-
     double xmo = tle_.meanAnomaly * M_PI / 180.0 + xmdot_ * tsince;
     double omegao = tle_.argumentPerigee * M_PI / 180.0 + omgdot_ * tsince;
     double xno = tle_.rightAscension * M_PI / 180.0 + xnodot_ * tsince;
 
-    // Kepler's equation (simplified)
+    // Kepler's equation
     double e = tle_.eccentricity;
     double a = tle_.a * XKMPER;  // Convert to km
 
-    double M = xmo;
+    double M = fmod(xmo, 2.0 * M_PI);
     double E = M;
 
-    // Iterate to solve Kepler's equation
+    // Solve Kepler's equation using Newton-Raphson method
     for(int i = 0; i < 10; i++) {
-        double E_new = M + e * sin(E);
-        if(std::abs(E_new - E) < 1e-12) break;
+        double E_new = E - (E - e * sin(E) - M) / (1.0 - e * cos(E));
+        if(std::abs(E_new - E) < 1e-12) {
+            E = E_new;
+            break;
+        }
         E = E_new;
     }
 
@@ -89,8 +99,15 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     pos.y = xh * sin(xno) + yh * cosio_ * cos(xno);
     pos.z = yh * sinio_;
 
-    // Velocity calculations would go here
-    Vector3 vel;  // Simplified - actual implementation needed
+    // Calculate velocity (simplified)
+    double xn = xnodp_;
+    double rdot = -xn * a * e * sin(E) / sqrt(1.0 - e * e);
+    double rfdot = xn * a * sqrt(1.0 - e * e) * cos(E) / (1.0 - e * cos(E));
+
+    Vector3 vel;
+    vel.x = rdot * cos(nu) - r * rfdot * sin(nu);
+    vel.y = rdot * sin(nu) + r * rfdot * cos(nu);
+    vel.z = 0.0;  // Simplified - needs proper implementation
 
     return OrbitalState{pos, vel};
 }
