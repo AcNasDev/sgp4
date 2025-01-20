@@ -57,35 +57,46 @@ void SGP4::calculateConstants() {
 }
 
 OrbitalState SGP4::getPosition(const QDateTime& time) const {
-    // Calculate time since epoch in minutes
+    qDebug() << "\n=== SGP4 Position Calculation Debug ===";
+    qDebug() << "Input UTC time:" << time.toString("yyyy-MM-dd HH:mm:ss");
+
+    // Calculate epoch time
     int year = tle_.epochYear;
-    if (year < 57) {
-        year += 2000;
-    } else {
-        year += 1900;
-    }
+    if (year < 57) year += 2000;
+    else year += 1900;
 
     QDateTime epoch = QDateTime(QDate(year, 1, 1), QTime(0, 0), Qt::UTC);
     epoch = epoch.addSecs(static_cast<qint64>((tle_.epochDay - 1.0) * 86400.0));
 
-    double tsince = epoch.secsTo(time) / 60.0;  // Convert to minutes
+    qDebug() << "Epoch time:" << epoch.toString("yyyy-MM-dd HH:mm:ss");
 
-    // Compute angles in radians
+    // Calculate time since epoch
+    double tsince = epoch.secsTo(time) / 60.0;  // Convert to minutes
+    qDebug() << "Time since epoch (minutes):" << tsince;
+
+    // Compute angles
     double xmo = fmod(tle_.meanAnomaly * M_PI / 180.0 + xmdot_ * tsince, 2.0 * M_PI);
     double omegao = tle_.argumentPerigee * M_PI / 180.0 + omgdot_ * tsince;
     double xno = tle_.rightAscension * M_PI / 180.0 + xnodot_ * tsince;
 
+    qDebug() << "\n--- Orbital Elements at Time t ---";
+    qDebug() << "Mean Anomaly (rad):" << xmo;
+    qDebug() << "Argument of Perigee (rad):" << omegao;
+    qDebug() << "Right Ascension (rad):" << xno;
+
     // Solve Kepler's equation
     double e = tle_.eccentricity;
     double E = xmo;
+    int iter = 0;
 
+    qDebug() << "\n--- Kepler's Equation Solution ---";
     for (int i = 0; i < 10; i++) {
         double E_new = E - (E - e * sin(E) - xmo) / (1.0 - e * cos(E));
-        if (std::abs(E_new - E) < 1e-12) {
-            E = E_new;
-            break;
-        }
+        double delta = std::abs(E_new - E);
         E = E_new;
+        iter = i + 1;
+        qDebug() << "Iteration" << iter << "- E:" << E << "Delta:" << delta;
+        if (delta < 1e-12) break;
     }
 
     // Calculate true anomaly
@@ -95,10 +106,17 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     double cosv = (cosE - e) / (1.0 - e * cosE);
     double nu = atan2(sinv, cosv);
 
+    qDebug() << "\n--- Position Calculation ---";
+    qDebug() << "True Anomaly (rad):" << nu;
+
     // Calculate position in orbital plane
-    double r = tle_.a * XKMPER * (1.0 - e * cosE);  // Convert to km
+    double r = tle_.a * XKMPER * (1.0 - e * cosE);
     double u = omegao + nu;
 
+    qDebug() << "Radius vector (km):" << r;
+    qDebug() << "Argument of latitude (rad):" << u;
+
+    // Convert to geocentric coordinates
     double sin_u = sin(u);
     double cos_u = cos(u);
     double sin_i = sinio_;
@@ -106,16 +124,25 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     double sin_node = sin(xno);
     double cos_node = cos(xno);
 
-    // Convert position to geocentric coordinates
     Vector3 pos;
     pos.x = r * (cos_node * cos_u - sin_node * sin_u * cos_i);
     pos.y = r * (sin_node * cos_u + cos_node * sin_u * cos_i);
     pos.z = r * sin_u * sin_i;
 
-    // Calculate velocity (simplified)
+    qDebug() << "\n--- Final Position (km) ---";
+    qDebug() << "X:" << pos.x;
+    qDebug() << "Y:" << pos.y;
+    qDebug() << "Z:" << pos.z;
+
+    // Calculate velocity
     double xn = xnodp_;
+    xn = xn / 60.0;  // Добавляем эту строку!
     double rdot = xn * tle_.a * XKMPER * e * sinE / sqrt(1.0 - e * e);
     double rfdot = xn * tle_.a * XKMPER * sqrt(1.0 - e * e) / (1.0 - e * cosE);
+
+    qDebug() << "\n--- Velocity Components ---";
+    qDebug() << "Radial velocity (km/s):" << rdot;
+    qDebug() << "Cross-track velocity (km/s):" << rfdot;
 
     Vector3 vel;
     vel.x = rdot * (cos_node * cos_u - sin_node * sin_u * cos_i) -
@@ -123,6 +150,13 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     vel.y = rdot * (sin_node * cos_u + cos_node * sin_u * cos_i) -
             rfdot * (sin_node * sin_u - cos_node * cos_u * cos_i);
     vel.z = rdot * sin_u * sin_i + rfdot * cos_u * sin_i;
+
+    qDebug() << "\n--- Final Velocity (km/s) ---";
+    qDebug() << "VX:" << vel.x;
+    qDebug() << "VY:" << vel.y;
+    qDebug() << "VZ:" << vel.z;
+
+    qDebug() << "=== End SGP4 Position Calculation ===\n";
 
     return OrbitalState{pos, vel};
 }
