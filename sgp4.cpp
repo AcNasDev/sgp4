@@ -64,9 +64,17 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
         year += 1900;
     }
 
+    // Добавляем отладочную информацию
+    qDebug() << "\nTime calculations:";
+    qDebug() << "Input time (UTC):" << time.toString(Qt::ISODate);
+
     QDateTime epoch = QDateTime(QDate(year, 1, 1), QTime(0, 0), Qt::UTC);
     epoch = epoch.addSecs(static_cast<qint64>((tle_.epochDay - 1.0) * 86400.0));
+
+    qDebug() << "TLE Epoch:" << epoch.toString(Qt::ISODate);
+
     double tsince = epoch.secsTo(time) / 60.0;  // время в минутах
+    qDebug() << "Minutes since epoch:" << tsince;
 
     // Вычисление средней аномалии, аргумента перигея и прямого восхождения
     double xmo = fmod(tle_.meanAnomaly * M_PI / 180.0 + xmdot_ * tsince, 2.0 * M_PI);
@@ -125,6 +133,8 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     double xn = xnodp_;
     double rdot = xn * tle_.a * XKMPER * e * sinE / sqrt(1.0 - e * e);
     double rfdot = xn * tle_.a * XKMPER * sqrt(1.0 - e * e) / (1.0 - e * cosE);
+    rdot /= 60;
+    rfdot /= 60;
 
     Vector3 vel_eci;
     vel_eci.x = rdot * (cos_node * cos_u - sin_node * sin_u * cos_i) -
@@ -136,13 +146,18 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
     // Учет возмущений
     calculatePerturbations(tsince, pos_eci, vel_eci);
 
-    // Вычисление GMST
-    double gmst = calculateGMST(time);
-
     // Преобразование в ECEF координаты
+    double gmst = calculateGMST(time);
+    qDebug() << "\nECI to ECEF conversion:";
+    qDebug() << "GMST (radians):" << gmst;
+
     Vector3 pos_ecef;
-    pos_ecef.x = pos_eci.x * cos(gmst) + pos_eci.y * sin(gmst);
-    pos_ecef.y = -pos_eci.x * sin(gmst) + pos_eci.y * cos(gmst);
+    double cos_gmst = cos(gmst);
+    double sin_gmst = sin(gmst);
+
+    // Позиция
+    pos_ecef.x = pos_eci.x * cos_gmst + pos_eci.y * sin_gmst;
+    pos_ecef.y = -pos_eci.x * sin_gmst + pos_eci.y * cos_gmst;
     pos_ecef.z = pos_eci.z;
 
     // Преобразование скорости в ECEF
@@ -163,40 +178,57 @@ OrbitalState SGP4::getPosition(const QDateTime& time) const {
 
 // Добавим новую функцию в класс SGP4
 double SGP4::calculateGMST(const QDateTime& time) const {
+    // Получаем время UTC в юлианских столетиях от J2000.0
     QDateTime j2000(QDate(2000, 1, 1), QTime(12, 0), Qt::UTC);
-    double days_since_j2000 = j2000.secsTo(time) / 86400.0;
-    double T = days_since_j2000 / 36525.0;  // юлианские столетия
+    qint64 secs_since_j2000 = j2000.secsTo(time);
+    double days_since_j2000 = static_cast<double>(secs_since_j2000) / 86400.0;
+    double T = days_since_j2000 / 36525.0;
 
-    // GMST в градусах, учитывая высокоточные члены
+    qDebug() << "\nGMST Calculations:";
+    qDebug() << "Days since J2000.0:" << days_since_j2000;
+    qDebug() << "Julian centuries T:" << T;
+
+    // GMST в градусах (формула из IERS Conventions 2010)
     double gmst = 280.46061837 +
                   360.98564736629 * days_since_j2000 +
                   0.000387933 * T * T -
                   T * T * T / 38710000.0;
 
-    // Учитываем прецессию
+    // Нормализация в диапазон [0, 360]
+    gmst = fmod(gmst, 360.0);
+    if (gmst < 0) {
+        gmst += 360.0;
+    }
+
+    qDebug() << "GMST (degrees before corrections):" << gmst;
+
+    // Учет прецессии (более точная формула)
     double zeta = (2306.2181 * T + 0.30188 * T * T + 0.017998 * T * T * T) / 3600.0;
     double z = (2306.2181 * T + 1.09468 * T * T + 0.018203 * T * T * T) / 3600.0;
     double theta = (2004.3109 * T - 0.42665 * T * T - 0.041833 * T * T * T) / 3600.0;
 
-    gmst += zeta + z;
+    // Учет нутации
+    double omega = 125.04452222 - 1934.136261111 * T; // долгота восх. узла Луны
+    double eps = 23.43929111 - 0.013004167 * T;       // наклон эклиптики
 
-    // Добавляем вклад от нутации
-    double omega = 125.04452222 - 1934.136261111 * T;  // долгота восходящего узла Луны
-    double L = 280.4665 + 36000.7698 * T;             // средняя долгота Солнца
-    double Lp = 218.3165 + 481267.8813 * T;           // средняя долгота Луны
+    // Нутация в долготе (упрощенная формула)
+    double dpsi = (-17.20 * sin(omega * M_PI/180.0) -
+                   1.32 * sin(2.0 * (280.4665 + 36000.7698 * T) * M_PI/180.0)) / 3600.0;
 
-    double dpsi = -17.20 * sin(omega * M_PI/180.0) - 1.32 * sin(2*L * M_PI/180.0)
-                  - 0.23 * sin(2*Lp * M_PI/180.0) + 0.21 * sin(2*omega * M_PI/180.0);
-    dpsi /= 3600.0;  // переводим из угловых секунд в градусы
+    // Уравнение равноденствий
+    double eqeq = dpsi * cos(eps * M_PI/180.0);
 
-    double eps = 23.43929111 - 0.013004167 * T;  // наклон эклиптики
-    gmst += dpsi * cos(eps * M_PI/180.0);
+    // Применяем все поправки
+    gmst += zeta + z + eqeq;
 
-    // Нормализуем в диапазон [0, 360]
-    gmst = fmod(gmst, 360.0);
-    if (gmst < 0) gmst += 360.0;
+    qDebug() << "Final GMST (degrees):" << gmst;
 
-    return gmst * M_PI / 180.0;  // возвращаем в радианах
+    // Преобразуем в радианы
+    double gmst_rad = gmst * M_PI / 180.0;
+
+    qDebug() << "Final GMST (radians):" << gmst_rad;
+
+    return gmst_rad;
 }
 
 Vector3 SGP4::applyPolarMotion(const Vector3& ecef, const PolarMotion& pm) const {

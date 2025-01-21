@@ -157,8 +157,8 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
     // Пример TLE данных (МКС)
-    QString line1 = "1 57890U 23145E   25020.58965078  .00018142  00000-0  75795-3 0  9993";
-    QString line2 = "2 57890  34.9931 183.9858 0003532 252.3040 107.7289 15.22765489 74915";
+    QString line1 = "1 57890U 23145E   25020.85189745  .00018590  00000-0  77631-3 0  9990";
+    QString line2 = "2 57890  34.9930 182.3369 0003551 253.6560 106.3764 15.22775490 74956";
 
     auto tle_opt = TLEParser::parseFromTxt(line1, line2);
     if (!tle_opt) {
